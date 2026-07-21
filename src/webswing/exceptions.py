@@ -26,3 +26,14 @@ class NonPositiveWebLengthError(WebSwingError):
     def __init__(self, ell: float) -> None:
         super().__init__(f"web length must be finite and strictly positive, got ell={ell!r}")
         self.ell = ell
+
+
+class AttachmentRangeExceededError(WebSwingError):
+    """Raised when a candidate anchor lies beyond the maximum attachment range."""
+
+    def __init__(self, ell: float, max_range: float) -> None:
+        super().__init__(
+            f"web length {ell!r} exceeds maximum attachment range {max_range!r}"
+        )
+        self.ell = ell
+        self.max_range = max_range
