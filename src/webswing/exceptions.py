@@ -52,3 +52,13 @@ class NonFiniteStateError(WebSwingError):
         super().__init__(f"{label} contains a non-finite component: {state!r}")
         self.state = state
         self.label = label
+
+
+class InvalidGeometryError(WebSwingError):
+    """Raised when urban geometry (a building polygon, region, or city) is invalid.
+
+    Covers structurally invalid polygons (too few vertices, non-finite or
+    degenerate), descriptive fields inconsistent with the polygon they
+    describe (width, height, roof elevation), and invalid region or city
+    definitions (non-positive extents, duplicate building identifiers).
+    """
