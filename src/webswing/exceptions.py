@@ -37,3 +37,18 @@ class AttachmentRangeExceededError(WebSwingError):
         )
         self.ell = ell
         self.max_range = max_range
+
+
+class NonFiniteStateError(WebSwingError):
+    """Raised when an integrator state contains a NaN or infinite component.
+
+    Zero-crossing event detection cannot observe non-finite values (any
+    comparison involving NaN is False), so this check must be applied
+    directly to sampled or output states rather than expressed as a
+    `solve_ivp` event function.
+    """
+
+    def __init__(self, state: object, label: str = "state") -> None:
+        super().__init__(f"{label} contains a non-finite component: {state!r}")
+        self.state = state
+        self.label = label
