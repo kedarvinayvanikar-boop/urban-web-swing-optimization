@@ -62,3 +62,12 @@ class InvalidGeometryError(WebSwingError):
     describe (width, height, roof elevation), and invalid region or city
     definitions (non-positive extents, duplicate building identifiers).
     """
+
+
+class InvalidControlProfileError(WebSwingError):
+    """Raised when a radial control profile is structurally invalid or out of bounds.
+
+    Covers non-finite or mis-ordered breakpoints, a value/breakpoint count
+    mismatch, non-finite bounds, and any control value falling outside its
+    declared [u_min, u_max] bounds.
+    """
