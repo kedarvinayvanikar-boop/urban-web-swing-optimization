@@ -15,6 +15,7 @@ import pytest
 
 from webswing.geometry.buildings import Building, City, DestinationRegion
 from webswing.geometry.collision import (
+    first_point_in_region_index,
     ground_collision,
     point_in_destination,
     point_in_polygon,
@@ -270,3 +271,28 @@ def test_trajectory_with_fewer_than_two_points_never_collides() -> None:
     city = City(buildings=(make_building(),), destination=make_destination())
     assert trajectory_collides_with_city([(0.0, 5.0)], city) is False
     assert trajectory_collides_with_city([], city) is False
+
+
+# --- first_point_in_region_index -------------------------------------------------
+
+
+def test_first_point_in_region_index_finds_first_match() -> None:
+    destination = make_destination()
+    points = [(0.0, 0.0), (200.0, 0.0), (55.0, 2.0), (56.0, 2.0)]
+    assert first_point_in_region_index(points, destination) == 2
+
+
+def test_first_point_in_region_index_returns_none_when_no_match() -> None:
+    destination = make_destination()
+    points = [(0.0, 0.0), (200.0, 0.0), (300.0, 0.0)]
+    assert first_point_in_region_index(points, destination) is None
+
+
+def test_first_point_in_region_index_on_empty_list_returns_none() -> None:
+    assert first_point_in_region_index([], make_destination()) is None
+
+
+def test_first_point_in_region_index_matches_boundary_point() -> None:
+    destination = make_destination()
+    points = [(0.0, 0.0), (50.0, 0.0)]  # (50.0, 0.0) is exactly on the boundary
+    assert first_point_in_region_index(points, destination) == 1

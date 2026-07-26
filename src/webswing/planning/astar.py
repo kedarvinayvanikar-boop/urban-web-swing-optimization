@@ -47,6 +47,11 @@ destination region. If found, that transfer additionally yields an edge to
 a distinguished goal node at the time of first entry -- which may be
 earlier, and cheaper, than the time to actually capture the transfer's
 intended target anchor.
+
+Every transfer edge's label is a `PlannedTransfer`, carrying both the
+`LocalTransferProblem` and its `LocalTransferResult`, so a later consumer
+(`simulation.trajectory`) can replay the same dense trajectory without
+re-optimizing.
 """
 
 from __future__ import annotations
@@ -62,7 +67,7 @@ import numpy as np
 from webswing.config import BallisticDomain, PhysicalParameters, SwingConstraints
 from webswing.geometry.anchors import anchor_has_line_of_sight
 from webswing.geometry.buildings import City
-from webswing.geometry.collision import point_in_destination
+from webswing.geometry.collision import first_point_in_region_index, point_in_destination
 from webswing.optimization.local_transfer import (
     LocalTransferProblem,
     LocalTransferResult,
@@ -247,14 +252,29 @@ def _enumerate_city_anchors(city: City) -> dict[str, _AnchorInfo]:
     return anchors
 
 
+@dataclass(frozen=True)
+class PlannedTransfer:
+    """A transfer edge's problem and solved result, carried as an edge label.
+
+    Carrying `problem` alongside `result` lets a caller replay the edge's
+    exact dense trajectory later (`simulation.trajectory`) via
+    `optimization.local_transfer.simulate_transfer(result.solution, problem)`
+    -- without re-optimizing, and without needing to reconstruct which
+    anchor, incoming state, and physical parameters produced this edge.
+    """
+
+    problem: LocalTransferProblem
+    result: LocalTransferResult
+
+
 def _destination_interception_time(sim: TransferSimulation, city: City) -> float | None:
     if sim.ballistic_states is None or sim.ballistic_times is None:
         return None
-    for t, row in zip(sim.ballistic_times, sim.ballistic_states):
-        x, y = float(row[0]), float(row[1])
-        if point_in_destination((x, y), city.destination):
-            return float(sim.t_release + t)
-    return None
+    points = [(float(row[0]), float(row[1])) for row in sim.ballistic_states]
+    index = first_point_in_region_index(points, city.destination)
+    if index is None:
+        return None
+    return float(sim.t_release + sim.ballistic_times[index])
 
 
 def plan_route(
@@ -320,10 +340,11 @@ def plan_route(
     Returns
     -------
     SearchResult[PlanningState]
-        `SearchEdge.label` on each edge is the `LocalTransferResult` that
-        produced it. `SearchEdge.to_node` is `GOAL_NODE` for an edge that
-        reaches the destination by ballistic interception rather than by
-        capturing its intended target anchor.
+        `SearchEdge.label` on each edge is a `PlannedTransfer` (the
+        `LocalTransferProblem` and the `LocalTransferResult` that produced
+        it). `SearchEdge.to_node` is `GOAL_NODE` for an edge that reaches
+        the destination by ballistic interception rather than by capturing
+        its intended target anchor.
     """
     base_heuristic = heuristic if heuristic is not None else zero_heuristic
 
@@ -383,17 +404,18 @@ def plan_route(
             result: LocalTransferResult = cache.get_or_compute(
                 node, anchor_id, lambda problem=problem: solve_local_transfer(problem)
             )
+            label = PlannedTransfer(problem, result)
 
             sim = simulate_transfer(result.solution, problem)
             interception_time = _destination_interception_time(sim, city)
             if interception_time is not None:
-                edges.append((GOAL_NODE, interception_time, result))
+                edges.append((GOAL_NODE, interception_time, label))
 
             neighbor_node = resulting_planning_state(
                 result, anchor_id, info.position, params, resolution, max_attachment_range
             )
             if neighbor_node is not None:
-                edges.append((neighbor_node, edge_cost(result), result))
+                edges.append((neighbor_node, edge_cost(result), label))
 
         return edges
 

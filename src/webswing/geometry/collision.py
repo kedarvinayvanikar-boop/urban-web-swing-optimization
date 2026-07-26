@@ -347,6 +347,34 @@ def point_in_destination(point: Point, region: DestinationRegion) -> bool:
     return region.x_min <= x <= region.x_max and region.y_min <= y <= region.y_max
 
 
+def first_point_in_region_index(points: list[Point], region: DestinationRegion) -> int | None:
+    """Return the index of the first point in `points` that lies inside `region`.
+
+    A single canonical scan for "where does this sampled path first enter
+    the region", shared by callers that need the entry time (index into a
+    parallel times array) and callers that need to truncate the path at
+    that point, so the two stay consistent by construction rather than by
+    two independently written scans.
+
+    Parameters
+    ----------
+    points : list[tuple[float, float]]
+        Ordered sample points, in meters.
+    region : DestinationRegion
+        Axis-aligned destination region.
+
+    Returns
+    -------
+    int or None
+        Index of the first point inside or on the boundary of `region`, or
+        None if no point in `points` is inside it.
+    """
+    for index, point in enumerate(points):
+        if point_in_destination(point, region):
+            return index
+    return None
+
+
 def segment_collides_with_city(
     p1: Point, p2: Point, city: City, extra_clearance: float = 0.0
 ) -> bool:
