@@ -27,9 +27,12 @@ from webswing.config import BallisticDomain, PhysicalParameters, SwingConstraint
 from webswing.geometry.buildings import Building, City, DestinationRegion
 from webswing.planning.state import PlanningStateResolution
 from webswing.simulation.runner import run_simulation
+from webswing.simulation.evaluator import TrajectoryEvaluation
+from webswing.simulation.trajectory import Trajectory
 from webswing.visualization.static import (
     _contiguous_mode_runs,
     plot_city,
+    plot_constraint_failure_location,
     plot_selected_anchors,
     plot_start,
     plot_trajectory,
@@ -247,4 +250,66 @@ def test_render_static_overview_produces_expected_artist_counts(successful_run) 
 
     import matplotlib.pyplot as plt
 
+    plt.close(fig)
+
+
+# --- plot_constraint_failure_location -------------------------------------------------------
+
+
+def _make_trajectory(n: int) -> Trajectory:
+    return Trajectory(
+        times=np.arange(float(n)),
+        positions=np.array([[float(i), float(i)] for i in range(n)]),
+        velocities=np.zeros((n, 2)),
+        modes=("swing",) * n,
+        active_anchor_ids=("A",) * n,
+        web_lengths=np.full(n, 2.0),
+        angular_rates=np.zeros(n),
+        radial_rates=np.zeros(n),
+    )
+
+
+def test_plot_constraint_failure_location_returns_false_when_feasible(successful_run) -> None:
+    import matplotlib.pyplot as plt
+
+    run, _city = successful_run
+    fig, ax = plt.subplots()
+    found = plot_constraint_failure_location(ax, run.trajectory, run.evaluation)
+    assert found is False
+    assert len(ax.collections) == 0
+    plt.close(fig)
+
+
+def test_plot_constraint_failure_location_marks_first_violation() -> None:
+    import matplotlib.pyplot as plt
+
+    trajectory = _make_trajectory(4)
+    evaluation = TrajectoryEvaluation(
+        tensions=np.array([10.0, 10.0, 10.0, 10.0]),
+        load_factors=np.array([1.0, 1.0, 1.0, 1.0]),
+        tension_margins=np.array([5.0, -1.0, -2.0, 5.0]),
+        load_factor_margins=np.array([1.0, 1.0, 1.0, 1.0]),
+    )
+    fig, ax = plt.subplots()
+    found = plot_constraint_failure_location(ax, trajectory, evaluation)
+    assert found is True
+    assert len(ax.collections) == 1
+    offsets = ax.collections[0].get_offsets()
+    np.testing.assert_allclose(offsets[0], trajectory.positions[1])  # first violation is index 1
+    plt.close(fig)
+
+
+def test_plot_constraint_failure_location_ignores_nan_ballistic_margins() -> None:
+    import matplotlib.pyplot as plt
+
+    trajectory = _make_trajectory(3)
+    evaluation = TrajectoryEvaluation(
+        tensions=np.array([10.0, float("nan"), 10.0]),
+        load_factors=np.array([1.0, float("nan"), 1.0]),
+        tension_margins=np.array([5.0, float("nan"), 5.0]),
+        load_factor_margins=np.array([1.0, float("nan"), 1.0]),
+    )
+    fig, ax = plt.subplots()
+    found = plot_constraint_failure_location(ax, trajectory, evaluation)
+    assert found is False
     plt.close(fig)

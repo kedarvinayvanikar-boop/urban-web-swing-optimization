@@ -7,14 +7,18 @@ start location, and the full trajectory trace with attached ("swing") and
 ballistic portions in visually distinguishable line styles, per CLAUDE.md's
 Visualization Requirements.
 
-Scope relative to `animation.py` and `hud.py` (not yet built)
--------------------------------------------------------------------
+Scope relative to `animation.py` and `hud.py`
+--------------------------------------------------
 This module renders only elements that make sense in a single static image
 -- there is no "current time," so it does not draw the active web line or
 the current-position/velocity markers CLAUDE.md lists among the animation
 requirements; those are inherently per-frame concepts and belong to
 `animation.py`. Likewise, no HUD text (simulation time, current tension,
-etc.) is drawn here; that is `hud.py`'s responsibility.
+etc.) is drawn here; that is `hud.py`'s responsibility. `render_static_overview`,
+the top-level convenience function, does not include
+`plot_constraint_failure_location` (which needs a `TrajectoryEvaluation`,
+not just a `Trajectory`) -- `animation.py` wires that primitive in
+directly, since it already requires an evaluation for the HUD.
 
 Every function here only reads already-computed `City`,
 `simulation.trajectory.Trajectory`, and `planning.astar.SearchEdge` data --
@@ -23,6 +27,7 @@ no `solve_ivp` or `scipy.optimize` call occurs anywhere in this module.
 
 from __future__ import annotations
 
+import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
@@ -30,6 +35,7 @@ from matplotlib.patches import Polygon, Rectangle
 
 from webswing.geometry.buildings import City
 from webswing.planning.astar import GOAL_NODE, PlannedTransfer, SearchEdge
+from webswing.simulation.evaluator import TrajectoryEvaluation
 from webswing.simulation.trajectory import Trajectory
 
 Point = tuple[float, float]
@@ -38,6 +44,7 @@ _SWING_STYLE = dict(color="tab:blue", linestyle="-", linewidth=1.5, label="swing
 _BALLISTIC_STYLE = dict(color="tab:orange", linestyle="--", linewidth=1.5, label="ballistic")
 _BUILDING_STYLE = dict(facecolor="0.75", edgecolor="0.3", linewidth=1.0, zorder=1)
 _DESTINATION_STYLE = dict(facecolor="tab:green", alpha=0.25, edgecolor="tab:green", zorder=1)
+_FAILURE_STYLE = dict(marker="x", s=150, color="red", linewidths=2.5, zorder=6, label="constraint failure")
 _GROUND_STYLE = dict(color="0.3", linewidth=1.5, zorder=1)
 _CANDIDATE_ANCHOR_STYLE = dict(marker="o", s=15, color="0.5", zorder=2, label="candidate anchor")
 _SELECTED_ANCHOR_STYLE = dict(marker="o", s=45, color="tab:red", zorder=3, label="selected anchor")
@@ -163,6 +170,41 @@ def plot_selected_anchors(ax: Axes, path: tuple[SearchEdge, ...]) -> None:
     if positions:
         xs, ys = zip(*positions)
         ax.scatter(xs, ys, **_SELECTED_ANCHOR_STYLE)
+
+
+def plot_constraint_failure_location(
+    ax: Axes, trajectory: Trajectory, evaluation: TrajectoryEvaluation
+) -> bool:
+    """Mark the first sample where tension or load-factor margin is negative, if any.
+
+    `evaluation.tension_margins`/`load_factor_margins` are NaN during
+    ballistic samples; a NaN comparison is always False, so ballistic
+    samples never spuriously trigger this without any special-casing.
+
+    Parameters
+    ----------
+    ax : matplotlib.axes.Axes
+        Target axes.
+    trajectory : Trajectory
+        Trajectory the samples' positions come from.
+    evaluation : TrajectoryEvaluation
+        Margins to check, index-aligned with `trajectory`.
+
+    Returns
+    -------
+    bool
+        True if a violation was found and marked; False if `trajectory`
+        (as evaluated) is fully feasible. A route accepted by
+        `optimization.local_transfer` should never actually violate its
+        own constraints, so this is expected to return False in practice;
+        it exists as the defensive diagnostic marker CLAUDE.md requires.
+    """
+    violated = np.where((evaluation.tension_margins < 0.0) | (evaluation.load_factor_margins < 0.0))[0]
+    if len(violated) == 0:
+        return False
+    index = int(violated[0])
+    ax.scatter([trajectory.positions[index, 0]], [trajectory.positions[index, 1]], **_FAILURE_STYLE)
+    return True
 
 
 def render_static_overview(
