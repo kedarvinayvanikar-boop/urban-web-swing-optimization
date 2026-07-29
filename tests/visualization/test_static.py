@@ -116,8 +116,8 @@ def test_plot_city_adds_building_and_destination_patches() -> None:
     city = make_city()
     fig, ax = plt.subplots()
     plot_city(ax, city)
-    # one polygon per building, plus one rectangle for the destination region
-    assert len(ax.patches) == len(city.buildings) + 1
+    # one polygon per building, one rectangle for the destination region, one ground-fill span
+    assert len(ax.patches) == len(city.buildings) + 2
     plt.close(fig)
 
 
@@ -239,9 +239,12 @@ def test_render_static_overview_produces_expected_artist_counts(successful_run) 
     fig = render_static_overview(city, run.search_result.path, run.trajectory, START_ANCHOR_POSITION)
     ax = fig.axes[0]
 
-    assert len(ax.patches) == len(city.buildings) + 1
-    assert len(ax.lines) == 1 + len(_contiguous_mode_runs(run.trajectory.modes))  # ground + trajectory runs
-    assert len(ax.collections) == 3  # candidate anchors, selected anchors, start
+    # buildings + destination + ground fill + spider watermark body (abdomen, head)
+    assert len(ax.patches) == len(city.buildings) + 4
+    # ground line + trajectory runs + spider watermark (thread + 6 legs)
+    assert len(ax.lines) == 1 + len(_contiguous_mode_runs(run.trajectory.modes)) + 7
+    assert len(ax.collections) == 4  # candidate anchors, selected anchors, start, star field
+    assert len(ax.texts) == 1  # destination label
 
     legend = ax.get_legend()
     assert legend is not None

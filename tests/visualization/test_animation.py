@@ -33,6 +33,7 @@ from webswing.visualization.animation import (
     update_frame,
 )
 from webswing.visualization.hud import build_hud_frame, draw_hud, edge_indices_for_path, format_hud_text
+from webswing.visualization.static import _contiguous_mode_runs
 
 PARAMS = PhysicalParameters(mass=1.0, gravity=9.80665)
 CONSTRAINTS = SwingConstraints(
@@ -203,13 +204,13 @@ def test_render_animation_produces_expected_artist_counts(successful_run) -> Non
     ax = fig.axes[0]
 
     assert isinstance(anim, FuncAnimation)
-    # 1 building + 1 destination rectangle + 1 velocity-arrow patch
-    assert len(ax.patches) == len(city.buildings) + 2
-    # ground + swing run + ballistic run + position marker + web line
-    assert len(ax.lines) == 5
-    # candidate anchors, selected anchors, start (no constraint-failure marker: feasible route)
-    assert len(ax.collections) == 3
-    assert len(ax.texts) == 1
+    # buildings + destination rectangle + ground-fill span + velocity-arrow patch + spider body (abdomen, head)
+    assert len(ax.patches) == len(city.buildings) + 5
+    # ground line + trajectory runs + position marker + web line + spider watermark (thread + 6 legs)
+    assert len(ax.lines) == 1 + len(_contiguous_mode_runs(successful_run.trajectory.modes)) + 2 + 7
+    # candidate anchors, selected anchors, start, star field (no constraint-failure marker: feasible route)
+    assert len(ax.collections) == 4
+    assert len(ax.texts) == 2  # destination label + HUD text
 
     import matplotlib.pyplot as plt
 

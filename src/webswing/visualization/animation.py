@@ -23,6 +23,7 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 
+import matplotlib.patheffects as path_effects
 import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter, FuncAnimation, PillowWriter
 from matplotlib.axes import Axes
@@ -38,6 +39,7 @@ from webswing.simulation.evaluator import TrajectoryEvaluation
 from webswing.simulation.trajectory import Trajectory
 from webswing.visualization.hud import build_hud_frame, draw_hud, edge_indices_for_path, format_hud_text
 from webswing.visualization.static import (
+    apply_dark_theme,
     plot_city,
     plot_constraint_failure_location,
     plot_selected_anchors,
@@ -51,6 +53,20 @@ _VELOCITY_DISPLAY_SECONDS = 0.15
 """Velocity arrows are drawn as position -> position + velocity * this many
 seconds: a display heuristic (arrow length = distance travelled in that
 time), not a physical quantity."""
+
+_POSITION_COLOR = "#ECEFF1"
+_POSITION_EDGE_COLOR = "#FF1744"
+_VELOCITY_COLOR = "#FFC400"
+_WEB_LINE_COLOR = "#CFD8DC"
+_LEGEND_BG = "#05070D"
+_LEGEND_EDGE = "#2A3F5A"
+_LEGEND_TEXT = "#ECEFF1"
+
+
+def _glow(linewidth: float, color: str, alpha: float = 0.6) -> list:
+    """Return a `path_effects` list giving an artist a soft glow halo, plus normal rendering on top."""
+    return [path_effects.withStroke(linewidth=linewidth, foreground=color, alpha=alpha), path_effects.Normal()]
+
 
 _WRITERS: dict[str, tuple[type, str]] = {
     ".mp4": (FFMpegWriter, "ffmpeg"),
@@ -207,7 +223,8 @@ def render_animation(
     edge_indices = edge_indices_for_path(path)
     anchor_positions = _anchor_positions_from_path(path, start_anchor_id, start_anchor_position)
 
-    fig, ax = plt.subplots(figsize=figsize)
+    fig, ax = plt.subplots(figsize=figsize, dpi=120)
+    apply_dark_theme(fig, ax)
     plot_city(ax, city)
     plot_trajectory(ax, trajectory)
     plot_selected_anchors(ax, path)
@@ -215,23 +232,52 @@ def render_animation(
     plot_constraint_failure_location(ax, trajectory, evaluation)
 
     (position_marker,) = ax.plot(
-        [], [], marker="o", color="black", markersize=8, zorder=5, label="current position"
+        [],
+        [],
+        marker="o",
+        markersize=12,
+        markerfacecolor=_POSITION_COLOR,
+        markeredgecolor=_POSITION_EDGE_COLOR,
+        markeredgewidth=1.4,
+        linestyle="none",
+        zorder=7,
+        label="current position",
+        path_effects=_glow(9.0, _POSITION_COLOR, alpha=0.65),
     )
     velocity_arrow = FancyArrowPatch(
-        (0.0, 0.0), (0.0, 0.0), color="tab:red", arrowstyle="-|>", mutation_scale=15, zorder=5
+        (0.0, 0.0),
+        (0.0, 0.0),
+        color=_VELOCITY_COLOR,
+        arrowstyle="-|>",
+        mutation_scale=18,
+        linewidth=2.2,
+        zorder=6,
+        path_effects=_glow(7.0, _VELOCITY_COLOR, alpha=0.55),
     )
     ax.add_patch(velocity_arrow)
-    (web_line,) = ax.plot([], [], color="tab:blue", linewidth=1.5, linestyle=":", zorder=4, label="active web")
+    (web_line,) = ax.plot(
+        [],
+        [],
+        color=_WEB_LINE_COLOR,
+        linewidth=2.0,
+        linestyle=":",
+        zorder=5,
+        label="active web",
+        path_effects=_glow(6.0, _WEB_LINE_COLOR, alpha=0.5),
+    )
 
     initial_frame = build_hud_frame(trajectory, evaluation, edge_indices, constraints, 0)
     hud_text = draw_hud(ax, initial_frame)
 
     artists = AnimationArtists(position_marker, velocity_arrow, web_line, hud_text)
 
+    ax.set_title("Trajectory Playback", fontweight="bold")
     ax.set_xlabel("x (m)")
     ax.set_ylabel("y (m)")
     ax.set_aspect("equal", adjustable="datalim")
-    ax.legend(loc="lower right", fontsize="small")
+    legend = ax.legend(loc="lower right", fontsize="small", framealpha=0.9, facecolor=_LEGEND_BG, edgecolor=_LEGEND_EDGE)
+    for text in legend.get_texts():
+        text.set_color(_LEGEND_TEXT)
 
     def _update(frame_index: int) -> tuple:
         return update_frame(

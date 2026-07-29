@@ -230,8 +230,14 @@ def format_hud_text(frame: HudFrame) -> str:
     return "\n".join(lines)
 
 
-def draw_hud(ax: Axes, frame: HudFrame, loc: tuple[float, float] = (0.02, 0.98)) -> Text:
-    """Draw a `HudFrame` as a text block anchored to `ax`'s top-left corner.
+def draw_hud(ax: Axes, frame: HudFrame, loc: tuple[float, float] = (0.02, 0.02)) -> Text:
+    """Draw a `HudFrame` as a text block anchored to `ax`'s bottom-left corner.
+
+    Defaults to the bottom-left rather than the top-left: start anchors in
+    this domain are almost always elevated (rooftops), so a top-anchored
+    HUD tends to collide with the start marker and the beginning of the
+    swing trace, while the ground-level region near a destination region is
+    comparatively empty.
 
     Parameters
     ----------
@@ -241,7 +247,7 @@ def draw_hud(ax: Axes, frame: HudFrame, loc: tuple[float, float] = (0.02, 0.98))
         Field values to draw.
     loc : tuple[float, float], optional
         Anchor position in axes-fraction coordinates (0-1). Defaults to
-        the top-left corner.
+        the bottom-left corner.
 
     Returns
     -------
@@ -253,9 +259,16 @@ def draw_hud(ax: Axes, frame: HudFrame, loc: tuple[float, float] = (0.02, 0.98))
         loc[1],
         format_hud_text(frame),
         transform=ax.transAxes,
-        verticalalignment="top",
+        verticalalignment="bottom",
         horizontalalignment="left",
         fontsize=9,
         family="monospace",
-        bbox=dict(boxstyle="round", facecolor="white", alpha=0.8),
+        color="#ECEFF1",
+        bbox=dict(
+            boxstyle="round,pad=0.5",
+            facecolor="#05070D",
+            edgecolor="#2979FF",
+            linewidth=1.5,
+            alpha=0.92,
+        ),
     )
