@@ -1,10 +1,11 @@
 r"""Frame-by-frame playback of a stored trajectory via `matplotlib.animation`.
 
 Combines `static.py`'s city/route rendering (drawn once, unchanging across
-frames) with per-frame elements CLAUDE.md lists that a single static image
-cannot show: the active web line (the anchor-to-body segment during a
-swing sample, absent during ballistic samples), the current position
-marker, the current velocity vector, and `hud.py`'s per-frame HUD text.
+frames, on the same `Axes3D` scene `static.py` builds) with per-frame
+elements CLAUDE.md lists that a single static image cannot show: the
+active web line (the anchor-to-body segment during a swing sample, absent
+during ballistic samples), the current position marker, the current
+velocity indicator, and `hud.py`'s per-frame HUD text.
 
 Per CLAUDE.md, this module must not rerun the optimizer or numerical
 integrator while rendering: `render_animation` consumes an already-
@@ -16,6 +17,32 @@ only reads already-computed arrays.
 closure captured inside `render_animation`), so a single frame's behavior
 can be tested directly without depending on `matplotlib.animation.
 FuncAnimation`'s internal call mechanics.
+
+HUD text on a separate foreground overlay
+------------------------------------------------
+`static.py`'s rendering-only depth axis (see its module docstring) means
+the scene axes here is a 3D `Axes3D`, not a plain 2D `Axes`. HUD text
+(`hud.draw_hud`) is a flat UI overlay with no 3D position of its own, and
+`Axes3D.text` has an incompatible signature from plain `Axes.text`
+(it requires an explicit `z`); rather than special-case `hud.py` for a 3D
+host, `render_animation` draws the HUD on its own additional, fully
+transparent 2D overlay axes stacked in front of the 3D scene
+(mirroring `static.py`'s background-axes technique, but in front instead
+of behind), so `hud.draw_hud` keeps working exactly as designed for a
+plain 2D axes.
+
+Velocity indicator, not an arrowhead
+------------------------------------------
+The previous 2D rendering drew the current velocity as a
+`matplotlib.patches.FancyArrowPatch`. `mpl_toolkits.mplot3d.Axes3D` can
+only draw artists that implement 3D projection (`do_3d_projection`), which
+`FancyArrowPatch` does not; matplotlib ships no built-in 3D arrow patch.
+Rather than hand-roll a custom `do_3d_projection` subclass for one
+cosmetic arrowhead, the velocity is drawn as a plain glowing `Line3D`
+segment from the current position to `position + velocity *
+velocity_display_seconds` -- direction and relative magnitude are still
+readable from the segment itself, consistent with how the trajectory
+trace's own direction is read from plain lines rather than arrowheads.
 """
 
 from __future__ import annotations
@@ -28,9 +55,9 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FFMpegWriter, FuncAnimation, PillowWriter
 from matplotlib.axes import Axes
 from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
-from matplotlib.patches import FancyArrowPatch
 from matplotlib.text import Text
+from mpl_toolkits.mplot3d.art3d import Line3D
+from mpl_toolkits.mplot3d.axes3d import Axes3D
 
 from webswing.config import SwingConstraints
 from webswing.geometry.buildings import City
@@ -45,14 +72,15 @@ from webswing.visualization.static import (
     plot_selected_anchors,
     plot_start,
     plot_trajectory,
+    scene_extent,
 )
 
 Point = tuple[float, float]
 
 _VELOCITY_DISPLAY_SECONDS = 0.15
-"""Velocity arrows are drawn as position -> position + velocity * this many
-seconds: a display heuristic (arrow length = distance travelled in that
-time), not a physical quantity."""
+"""Velocity indicators are drawn as position -> position + velocity * this
+many seconds: a display heuristic (segment length = distance travelled in
+that time), not a physical quantity."""
 
 _POSITION_COLOR = "#ECEFF1"
 _POSITION_EDGE_COLOR = "#FF1744"
@@ -91,26 +119,33 @@ def _anchor_positions_from_path(
     return positions
 
 
+def _empty_line3d(ax: Axes3D, **style) -> Line3D:
+    (line,) = ax.plot([], [], [], **style)
+    return line
+
+
 @dataclass(frozen=True)
 class AnimationArtists:
     """The per-frame-mutable matplotlib artists `update_frame` refreshes each frame.
 
     Parameters
     ----------
-    position_marker : matplotlib.lines.Line2D
-        Marker at the current position.
-    velocity_arrow : matplotlib.patches.FancyArrowPatch
-        Arrow from the current position along the current velocity.
-    web_line : matplotlib.lines.Line2D
+    position_marker : mpl_toolkits.mplot3d.art3d.Line3D
+        Marker at the current position, on the depth=0 trajectory plane.
+    velocity_indicator : mpl_toolkits.mplot3d.art3d.Line3D
+        Segment from the current position along the current velocity (see
+        module docstring on why this is a line, not an arrow).
+    web_line : mpl_toolkits.mplot3d.art3d.Line3D
         Segment from the active anchor to the current position; hidden
         during ballistic samples.
     hud_text : matplotlib.text.Text
-        HUD text block.
+        HUD text block, drawn on a separate 2D foreground overlay axes
+        (see module docstring), not on the 3D scene axes.
     """
 
-    position_marker: Line2D
-    velocity_arrow: FancyArrowPatch
-    web_line: Line2D
+    position_marker: Line3D
+    velocity_indicator: Line3D
+    web_line: Line3D
     hud_text: Text
 
 
@@ -144,35 +179,35 @@ def update_frame(
     frame_index : int
         Sample index to render.
     velocity_display_seconds : float, optional
-        Display-only velocity arrow scale (see module docstring).
+        Display-only velocity segment scale (see module docstring).
 
     Returns
     -------
     tuple
-        `(position_marker, velocity_arrow, web_line, hud_text)`, as
+        `(position_marker, velocity_indicator, web_line, hud_text)`, as
         `matplotlib.animation.FuncAnimation`'s blitting contract expects.
     """
     frame = build_hud_frame(trajectory, evaluation, edge_indices, constraints, frame_index)
     x, y = frame.position
 
-    artists.position_marker.set_data([x], [y])
+    artists.position_marker.set_data_3d([x], [0.0], [y])
 
     vx, vy = trajectory.velocities[frame_index]
-    artists.velocity_arrow.set_positions(
-        (x, y), (x + vx * velocity_display_seconds, y + vy * velocity_display_seconds)
+    artists.velocity_indicator.set_data_3d(
+        [x, x + vx * velocity_display_seconds], [0.0, 0.0], [y, y + vy * velocity_display_seconds]
     )
 
     if frame.mode == "swing" and frame.active_anchor_id is not None:
         anchor_position = anchor_positions[frame.active_anchor_id]
-        artists.web_line.set_data([anchor_position[0], x], [anchor_position[1], y])
+        artists.web_line.set_data_3d([anchor_position[0], x], [0.0, 0.0], [anchor_position[1], y])
         artists.web_line.set_visible(True)
     else:
-        artists.web_line.set_data([], [])
+        artists.web_line.set_data_3d([], [], [])
         artists.web_line.set_visible(False)
 
     artists.hud_text.set_text(format_hud_text(frame))
 
-    return artists.position_marker, artists.velocity_arrow, artists.web_line, artists.hud_text
+    return artists.position_marker, artists.velocity_indicator, artists.web_line, artists.hud_text
 
 
 def render_animation(
@@ -223,17 +258,25 @@ def render_animation(
     edge_indices = edge_indices_for_path(path)
     anchor_positions = _anchor_positions_from_path(path, start_anchor_id, start_anchor_position)
 
-    fig, ax = plt.subplots(figsize=figsize, dpi=120)
+    fig = plt.figure(figsize=figsize, dpi=120)
+    ax = fig.add_subplot(projection="3d")
     apply_dark_theme(fig, ax)
+
     plot_city(ax, city)
     plot_trajectory(ax, trajectory)
     plot_selected_anchors(ax, path)
     plot_start(ax, start_anchor_position)
     plot_constraint_failure_location(ax, trajectory, evaluation)
 
-    (position_marker,) = ax.plot(
-        [],
-        [],
+    x_min, x_max, y_half_depth, z_min, z_max = scene_extent(city, trajectory, start_anchor_position)
+    ax.set_xlim3d(x_min, x_max)
+    ax.set_ylim3d(-y_half_depth, y_half_depth)
+    ax.set_zlim3d(z_min, z_max)
+    ax.set_box_aspect((x_max - x_min, 0.5 * (x_max - x_min), z_max - z_min))
+    ax.view_init(elev=22.0, azim=-55.0)
+
+    position_marker = _empty_line3d(
+        ax,
         marker="o",
         markersize=12,
         markerfacecolor=_POSITION_COLOR,
@@ -244,20 +287,16 @@ def render_animation(
         label="current position",
         path_effects=_glow(9.0, _POSITION_COLOR, alpha=0.65),
     )
-    velocity_arrow = FancyArrowPatch(
-        (0.0, 0.0),
-        (0.0, 0.0),
+    velocity_indicator = _empty_line3d(
+        ax,
         color=_VELOCITY_COLOR,
-        arrowstyle="-|>",
-        mutation_scale=18,
-        linewidth=2.2,
+        linewidth=2.6,
         zorder=6,
+        label="velocity",
         path_effects=_glow(7.0, _VELOCITY_COLOR, alpha=0.55),
     )
-    ax.add_patch(velocity_arrow)
-    (web_line,) = ax.plot(
-        [],
-        [],
+    web_line = _empty_line3d(
+        ax,
         color=_WEB_LINE_COLOR,
         linewidth=2.0,
         linestyle=":",
@@ -266,16 +305,33 @@ def render_animation(
         path_effects=_glow(6.0, _WEB_LINE_COLOR, alpha=0.5),
     )
 
-    initial_frame = build_hud_frame(trajectory, evaluation, edge_indices, constraints, 0)
-    hud_text = draw_hud(ax, initial_frame)
+    # HUD text is a flat UI overlay with no 3D position; it is drawn on a
+    # separate, fully transparent 2D axes stacked in front of the 3D scene
+    # rather than on `ax` itself (see module docstring).
+    fg_ax = fig.add_axes(ax.get_position(), zorder=ax.get_zorder() + 1)
+    fg_ax.set_facecolor("none")
+    fg_ax.patch.set_alpha(0.0)
+    fg_ax.set_xticks([])
+    fg_ax.set_yticks([])
+    for spine in fg_ax.spines.values():
+        spine.set_visible(False)
 
-    artists = AnimationArtists(position_marker, velocity_arrow, web_line, hud_text)
+    initial_frame = build_hud_frame(trajectory, evaluation, edge_indices, constraints, 0)
+    hud_text = draw_hud(fg_ax, initial_frame)
+
+    artists = AnimationArtists(position_marker, velocity_indicator, web_line, hud_text)
 
     ax.set_title("Trajectory Playback", fontweight="bold")
     ax.set_xlabel("x (m)")
-    ax.set_ylabel("y (m)")
-    ax.set_aspect("equal", adjustable="datalim")
-    legend = ax.legend(loc="lower right", fontsize="small", framealpha=0.9, facecolor=_LEGEND_BG, edgecolor=_LEGEND_EDGE)
+    ax.set_zlabel("y (m)")
+    legend = ax.legend(
+        loc="upper right",
+        fontsize="small",
+        framealpha=0.9,
+        facecolor=_LEGEND_BG,
+        edgecolor=_LEGEND_EDGE,
+        bbox_to_anchor=(1.0, 1.0),
+    )
     for text in legend.get_texts():
         text.set_color(_LEGEND_TEXT)
 

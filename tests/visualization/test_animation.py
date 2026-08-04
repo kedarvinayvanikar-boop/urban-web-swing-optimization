@@ -9,6 +9,14 @@ call mechanics) at a known swing sample and a known ballistic sample, and
 environment has (or lacks) ffmpeg installed; its GIF branch is exercised
 as a genuine export (Pillow is a matplotlib dependency, always available)
 and checked for a real, non-empty output file.
+
+All artists here live on an `Axes3D` scene axes (per `static.py`'s
+rendering-only depth-axis convention), so 3D-position assertions check
+`get_data_3d()` and disregard/assert-zero the synthetic depth coordinate.
+HUD text is the one exception: it is drawn on a separate plain 2D
+foreground overlay axes (see `animation.py`'s module docstring), so
+`draw_hud` in these tests is called on a plain `plt.subplots()` axes, same
+as `hud.py`'s own tests.
 """
 
 from __future__ import annotations
@@ -20,6 +28,7 @@ matplotlib.use("Agg")
 import numpy as np
 import pytest
 from matplotlib.animation import FFMpegWriter, FuncAnimation
+from mpl_toolkits.mplot3d.art3d import Line3D, Path3DCollection, Poly3DCollection
 
 from webswing.config import BallisticDomain, PhysicalParameters, SwingConstraints
 from webswing.geometry.buildings import Building, City, DestinationRegion
@@ -98,14 +107,13 @@ def test_anchor_positions_includes_start(successful_run) -> None:
 
 def _make_artists():
     import matplotlib.pyplot as plt
-    from matplotlib.patches import FancyArrowPatch
 
-    fig, ax = plt.subplots()
-    (position_marker,) = ax.plot([], [])
-    velocity_arrow = FancyArrowPatch((0.0, 0.0), (0.0, 0.0))
-    ax.add_patch(velocity_arrow)
-    (web_line,) = ax.plot([], [])
-    return fig, ax, position_marker, velocity_arrow, web_line
+    fig = plt.figure()
+    ax = fig.add_subplot(projection="3d")
+    (position_marker,) = ax.plot([], [], [])
+    (velocity_indicator,) = ax.plot([], [], [])
+    (web_line,) = ax.plot([], [], [])
+    return fig, ax, position_marker, velocity_indicator, web_line
 
 
 def test_update_frame_swing_sample_shows_web_line_to_active_anchor(successful_run) -> None:
@@ -115,23 +123,27 @@ def test_update_frame_swing_sample_shows_web_line_to_active_anchor(successful_ru
     edge_indices = edge_indices_for_path(path)
     anchor_positions = _anchor_positions_from_path(path, START_ANCHOR_ID, START_ANCHOR_POSITION)
 
-    fig, ax, position_marker, velocity_arrow, web_line = _make_artists()
+    fig, ax, position_marker, velocity_indicator, web_line = _make_artists()
+    fig2, hud_ax = plt.subplots()
     hud_text = draw_hud(
-        ax, build_hud_frame(successful_run.trajectory, successful_run.evaluation, edge_indices, CONSTRAINTS, 0)
+        hud_ax, build_hud_frame(successful_run.trajectory, successful_run.evaluation, edge_indices, CONSTRAINTS, 0)
     )
-    artists = AnimationArtists(position_marker, velocity_arrow, web_line, hud_text)
+    artists = AnimationArtists(position_marker, velocity_indicator, web_line, hud_text)
 
     update_frame(artists, successful_run.trajectory, successful_run.evaluation, edge_indices, anchor_positions, CONSTRAINTS, 0)
 
     assert web_line.get_visible() is True
-    xs, ys = web_line.get_data()
+    xs, depths, ys = web_line.get_data_3d()
     assert (xs[0], ys[0]) == START_ANCHOR_POSITION
+    np.testing.assert_allclose(depths, 0.0)
     expected_position = tuple(successful_run.trajectory.positions[0])
     assert (xs[1], ys[1]) == pytest.approx(expected_position)
 
-    pm_xs, pm_ys = position_marker.get_data()
+    pm_xs, pm_depths, pm_ys = position_marker.get_data_3d()
     assert (pm_xs[0], pm_ys[0]) == pytest.approx(expected_position)
+    np.testing.assert_allclose(pm_depths, 0.0)
     plt.close(fig)
+    plt.close(fig2)
 
 
 def test_update_frame_ballistic_sample_hides_web_line(successful_run) -> None:
@@ -142,14 +154,15 @@ def test_update_frame_ballistic_sample_hides_web_line(successful_run) -> None:
     anchor_positions = _anchor_positions_from_path(path, START_ANCHOR_ID, START_ANCHOR_POSITION)
     ballistic_index = successful_run.trajectory.modes.index("ballistic")
 
-    fig, ax, position_marker, velocity_arrow, web_line = _make_artists()
+    fig, ax, position_marker, velocity_indicator, web_line = _make_artists()
+    fig2, hud_ax = plt.subplots()
     hud_text = draw_hud(
-        ax,
+        hud_ax,
         build_hud_frame(
             successful_run.trajectory, successful_run.evaluation, edge_indices, CONSTRAINTS, ballistic_index
         ),
     )
-    artists = AnimationArtists(position_marker, velocity_arrow, web_line, hud_text)
+    artists = AnimationArtists(position_marker, velocity_indicator, web_line, hud_text)
 
     update_frame(
         artists,
@@ -163,6 +176,43 @@ def test_update_frame_ballistic_sample_hides_web_line(successful_run) -> None:
 
     assert web_line.get_visible() is False
     plt.close(fig)
+    plt.close(fig2)
+
+
+def test_update_frame_velocity_indicator_points_along_velocity(successful_run) -> None:
+    import matplotlib.pyplot as plt
+
+    path = successful_run.search_result.path
+    edge_indices = edge_indices_for_path(path)
+    anchor_positions = _anchor_positions_from_path(path, START_ANCHOR_ID, START_ANCHOR_POSITION)
+
+    fig, ax, position_marker, velocity_indicator, web_line = _make_artists()
+    fig2, hud_ax = plt.subplots()
+    hud_text = draw_hud(
+        hud_ax, build_hud_frame(successful_run.trajectory, successful_run.evaluation, edge_indices, CONSTRAINTS, 0)
+    )
+    artists = AnimationArtists(position_marker, velocity_indicator, web_line, hud_text)
+    velocity_display_seconds = 0.15
+
+    update_frame(
+        artists,
+        successful_run.trajectory,
+        successful_run.evaluation,
+        edge_indices,
+        anchor_positions,
+        CONSTRAINTS,
+        0,
+        velocity_display_seconds,
+    )
+
+    xs, depths, ys = velocity_indicator.get_data_3d()
+    x0, y0 = successful_run.trajectory.positions[0]
+    vx, vy = successful_run.trajectory.velocities[0]
+    np.testing.assert_allclose([xs[0], ys[0]], [x0, y0])
+    np.testing.assert_allclose([xs[1], ys[1]], [x0 + vx * velocity_display_seconds, y0 + vy * velocity_display_seconds])
+    np.testing.assert_allclose(depths, 0.0)
+    plt.close(fig)
+    plt.close(fig2)
 
 
 def test_update_frame_updates_hud_text_to_match_frame(successful_run) -> None:
@@ -172,10 +222,11 @@ def test_update_frame_updates_hud_text_to_match_frame(successful_run) -> None:
     edge_indices = edge_indices_for_path(path)
     anchor_positions = _anchor_positions_from_path(path, START_ANCHOR_ID, START_ANCHOR_POSITION)
 
-    fig, ax, position_marker, velocity_arrow, web_line = _make_artists()
+    fig, ax, position_marker, velocity_indicator, web_line = _make_artists()
+    fig2, hud_ax = plt.subplots()
     frame0 = build_hud_frame(successful_run.trajectory, successful_run.evaluation, edge_indices, CONSTRAINTS, 0)
-    hud_text = draw_hud(ax, frame0)
-    artists = AnimationArtists(position_marker, velocity_arrow, web_line, hud_text)
+    hud_text = draw_hud(hud_ax, frame0)
+    artists = AnimationArtists(position_marker, velocity_indicator, web_line, hud_text)
 
     last = len(successful_run.trajectory.times) - 1
     update_frame(artists, successful_run.trajectory, successful_run.evaluation, edge_indices, anchor_positions, CONSTRAINTS, last)
@@ -185,6 +236,7 @@ def test_update_frame_updates_hud_text_to_match_frame(successful_run) -> None:
     )
     assert hud_text.get_text() == format_hud_text(expected_frame)
     plt.close(fig)
+    plt.close(fig2)
 
 
 # --- render_animation --------------------------------------------------------------------
@@ -201,16 +253,24 @@ def test_render_animation_produces_expected_artist_counts(successful_run) -> Non
         START_ANCHOR_ID,
         START_ANCHOR_POSITION,
     )
-    ax = fig.axes[0]
-
     assert isinstance(anim, FuncAnimation)
-    # buildings + destination rectangle + ground-fill span + velocity-arrow patch + spider body (abdomen, head)
-    assert len(ax.patches) == len(city.buildings) + 5
-    # ground line + trajectory runs + position marker + web line + spider watermark (thread + 6 legs)
-    assert len(ax.lines) == 1 + len(_contiguous_mode_runs(successful_run.trajectory.modes)) + 2 + 7
-    # candidate anchors, selected anchors, start, star field (no constraint-failure marker: feasible route)
-    assert len(ax.collections) == 4
-    assert len(ax.texts) == 2  # destination label + HUD text
+    assert len(fig.axes) == 3  # 3D scene axes, background theme axes, foreground HUD axes
+    ax, bg_ax, fg_ax = fig.axes
+
+    poly_collections = [c for c in ax.collections if isinstance(c, Poly3DCollection)]
+    scatter_collections = [c for c in ax.collections if isinstance(c, Path3DCollection)]
+    assert len(poly_collections) == len(city.buildings) + 2  # buildings + destination + ground
+    assert len(scatter_collections) == 3  # candidate anchors, selected anchors, start
+    # ground line + trajectory runs + position marker + velocity indicator + web line
+    assert len(ax.lines) == 1 + len(_contiguous_mode_runs(successful_run.trajectory.modes)) + 3
+    assert len(ax.texts) == 1  # destination label
+    assert len(ax.patches) == 0  # everything is a 3D collection, not a 2D patch
+
+    assert len(bg_ax.patches) == 2  # spider abdomen + head
+    assert len(bg_ax.lines) == 7  # thread + 6 legs
+    assert len(bg_ax.collections) == 1  # star field
+
+    assert len(fg_ax.texts) == 1  # HUD text, on its own overlay axes
 
     import matplotlib.pyplot as plt
 
