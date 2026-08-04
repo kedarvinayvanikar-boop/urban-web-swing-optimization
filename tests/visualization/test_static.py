@@ -372,7 +372,7 @@ def test_render_static_overview_background_axes_carries_theme_decoration(success
     assert len(fig.axes) == 2
     bg_ax = fig.axes[1]
     assert len(bg_ax.collections) == 1  # star field
-    assert len(bg_ax.patches) == 2  # spider abdomen + head
+    assert len(bg_ax.patches) == 3  # spider emblem ring + abdomen + head
     assert len(bg_ax.lines) == 7  # thread + 6 legs
 
     import matplotlib.pyplot as plt

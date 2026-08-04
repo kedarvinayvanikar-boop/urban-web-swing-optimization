@@ -266,7 +266,7 @@ def test_render_animation_produces_expected_artist_counts(successful_run) -> Non
     assert len(ax.texts) == 1  # destination label
     assert len(ax.patches) == 0  # everything is a 3D collection, not a 2D patch
 
-    assert len(bg_ax.patches) == 2  # spider abdomen + head
+    assert len(bg_ax.patches) == 3  # spider emblem ring + abdomen + head
     assert len(bg_ax.lines) == 7  # thread + 6 legs
     assert len(bg_ax.collections) == 1  # star field
 

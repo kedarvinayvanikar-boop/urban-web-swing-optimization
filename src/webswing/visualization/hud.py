@@ -267,7 +267,7 @@ def draw_hud(ax: Axes, frame: HudFrame, loc: tuple[float, float] = (0.02, 0.02))
         bbox=dict(
             boxstyle="round,pad=0.5",
             facecolor="#05070D",
-            edgecolor="#2979FF",
+            edgecolor="#0D2F87",
             linewidth=1.5,
             alpha=0.92,
         ),

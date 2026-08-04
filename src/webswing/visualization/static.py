@@ -102,7 +102,7 @@ import matplotlib.pyplot as plt
 from matplotlib.axes import Axes
 from matplotlib.colors import LinearSegmentedColormap
 from matplotlib.figure import Figure
-from matplotlib.patches import Ellipse
+from matplotlib.patches import Circle, Ellipse
 from mpl_toolkits.mplot3d.art3d import Poly3DCollection
 from mpl_toolkits.mplot3d.axes3d import Axes3D
 
@@ -124,8 +124,8 @@ _TEXT_COLOR = "#ECEFF1"
 _MUTED_TEXT_COLOR = "#8592A6"
 _SPINE_COLOR = "#2A3F5A"
 
-_SWING_COLOR = "#FF1744"
-_BALLISTIC_COLOR = "#2979FF"
+_SWING_COLOR = "#8B0018"
+_BALLISTIC_COLOR = "#0D2F87"
 _GROUND_COLOR = "#161F35"
 _GROUND_LINE_COLOR = "#B0BEC5"
 _BUILDING_CAP_FACE = "#26364F"
@@ -134,10 +134,11 @@ _BUILDING_WALL_FACE = "#141B29"
 _BUILDING_EDGE = "#3F5C8A"
 _DESTINATION_COLOR = "#00E676"
 _CANDIDATE_ANCHOR_COLOR = "#B0BEC5"
-_SELECTED_ANCHOR_COLOR = "#FF1744"
+_SELECTED_ANCHOR_COLOR = "#8B0018"
 _START_COLOR = "#ECEFF1"
 _FAILURE_COLOR = "#FFD600"
 _SPIDER_COLOR = "#0B0D10"
+_SPIDER_EMBLEM_COLOR = "#8B0018"
 _WEB_THREAD_COLOR = "#CFD8DC"
 
 # Each building's render-only depth (see module docstring) is this fraction
@@ -248,56 +249,70 @@ def _paint_night_sky(ax: Axes, n_stars: int = 70, seed: int = 7) -> None:
 
 
 def _draw_spider_watermark(ax: Axes) -> None:
-    """Draw a small spider silhouette dangling from a silk thread in the top-left corner.
+    """Draw a spider silhouette dangling from a silk thread, ringed by an emblem badge, in the top-left corner.
 
     A literal nod to the web-swinging mechanic this package models, not a
-    generic mascot. Positioned in axes-fraction coordinates so it stays a
-    small, fixed corner watermark regardless of the data's actual extent.
-    `ax` must be a plain 2D axes (see module docstring on layered-axes
-    compositing) -- never the 3D data axes.
+    generic mascot, and not a reproduction of any copyrighted character
+    artwork (an abstract arachnid silhouette plus an unfilled ring accent,
+    not the mask or logo of any specific character). Positioned in
+    axes-fraction coordinates so it stays a fixed corner emblem regardless
+    of the data's actual extent. `ax` must be a plain 2D axes (see module
+    docstring on layered-axes compositing) -- never the 3D data axes.
     """
-    thread_top = (0.045, 1.0)
-    thread_bottom = (0.045, 0.86)
+    thread_top = (0.07, 1.0)
+    thread_bottom = (0.07, 0.762)
     ax.plot(
         [thread_top[0], thread_bottom[0]],
         [thread_top[1], thread_bottom[1]],
         color=_WEB_THREAD_COLOR,
-        linewidth=1.0,
+        linewidth=1.4,
         alpha=0.85,
         solid_capstyle="round",
         zorder=50,
         transform=ax.transAxes,
-        path_effects=_glow(3.0, _WEB_THREAD_COLOR, alpha=0.4),
+        path_effects=_glow(4.0, _WEB_THREAD_COLOR, alpha=0.4),
     )
 
     body_x, body_y = thread_bottom
-    abdomen_center = (body_x, body_y - 0.018)
+    abdomen_center = (body_x, body_y - 0.0306)
+    ax.add_patch(
+        Circle(
+            (body_x, 0.744),
+            radius=0.055,
+            facecolor="none",
+            edgecolor=_SPIDER_EMBLEM_COLOR,
+            linewidth=1.6,
+            zorder=49,
+            transform=ax.transAxes,
+            path_effects=_glow(5.0, _SPIDER_EMBLEM_COLOR, alpha=0.55),
+        )
+    )
     ax.add_patch(
         Ellipse(
             abdomen_center,
-            width=0.026,
-            height=0.020,
+            width=0.0442,
+            height=0.034,
             facecolor=_SPIDER_COLOR,
             edgecolor=_WEB_THREAD_COLOR,
-            linewidth=0.6,
+            linewidth=0.8,
             zorder=51,
             transform=ax.transAxes,
         )
     )
     ax.add_patch(
         Ellipse(
-            (body_x, body_y - 0.003),
-            width=0.015,
-            height=0.013,
+            (body_x, body_y - 0.0051),
+            width=0.0255,
+            height=0.0221,
             facecolor=_SPIDER_COLOR,
             edgecolor=_WEB_THREAD_COLOR,
-            linewidth=0.6,
+            linewidth=0.8,
             zorder=51,
             transform=ax.transAxes,
         )
     )
 
-    leg_length = 0.022
+    leg_length = 0.0374
     for angle_deg in (200.0, 230.0, 260.0, -20.0, -50.0, -80.0):
         angle = np.radians(angle_deg)
         dx = leg_length * np.cos(angle)
@@ -306,7 +321,7 @@ def _draw_spider_watermark(ax: Axes) -> None:
             [abdomen_center[0], abdomen_center[0] + dx],
             [abdomen_center[1], abdomen_center[1] + dy],
             color=_SPIDER_COLOR,
-            linewidth=1.1,
+            linewidth=1.4,
             solid_capstyle="round",
             zorder=50,
             transform=ax.transAxes,

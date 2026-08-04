@@ -83,7 +83,7 @@ many seconds: a display heuristic (segment length = distance travelled in
 that time), not a physical quantity."""
 
 _POSITION_COLOR = "#ECEFF1"
-_POSITION_EDGE_COLOR = "#FF1744"
+_POSITION_EDGE_COLOR = "#8B0018"
 _VELOCITY_COLOR = "#FFC400"
 _WEB_LINE_COLOR = "#CFD8DC"
 _LEGEND_BG = "#05070D"
